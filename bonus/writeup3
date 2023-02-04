@@ -1,0 +1,14 @@
+Once we start the virtual machine, we can press `shift` while it's booting to overwrite the `init` stage of the boot process. Here we can substitute `inittab` with a shell. [[001](http://www.ubuntugeek.com/how-to-recover-password-under-ubuntu.html)]
+
+```console
+boot: live init=/bin/bash
+```
+
+This will boot into a root shell.
+
+![image](https://user-images.githubusercontent.com/70098821/214083179-9d7e6036-6649-4ca7-842b-226e477be013.png)
+
+```console
+root@BornToSecHackMe:/# id
+uid=0(root) gid=0(root) groups=0(root)
+```

